@@ -1,85 +1,149 @@
-import os
-import gradio as gr
-from dotenv import load_dotenv
+
+import streamlit as st
 from groq import Groq
 
-load_dotenv()
+st.set_page_config(
+    page_title="AI Email Generator",
+    page_icon="✉️",
+    layout="centered"
+)
 
-api_key = os.getenv("GROQ_API_KEY")
+# Custom UI styling
+st.markdown("""
+<style>
+.stApp {
+    background: linear-gradient(135deg, #f5fff9, #edf5ff);
+}
+.block-container {
+    max-width: 800px;
+    padding-top: 2rem;
+}
+h1 {
+    color: #147d57;
+    text-align: center;
+}
+.subtitle {
+    text-align: center;
+    color: #526477;
+}
+.stButton > button {
+    background-color: #16845b;
+    color: white;
+    border-radius: 10px;
+    width: 100%;
+    height: 45px;
+    border: none;
+}
+.stButton > button:hover {
+    background-color: #106b48;
+    color: white;
+}
+</style>
+""", unsafe_allow_html=True)
 
-if not api_key:
-    raise ValueError(
-        "GROQ_API_KEY missing. Add it to your .env file."
+# App heading
+st.title("✉️ AI Email Generator")
+st.markdown(
+    '<p class="subtitle">Create clear, professional emails in seconds.</p>',
+    unsafe_allow_html=True
+)
+
+st.divider()
+
+# Email input fields
+with st.form("email_form"):
+    recipient = st.text_input(
+        "Recipient",
+        placeholder="e.g. Client, professor, or manager"
     )
 
-client = Groq(api_key=api_key)
+    purpose = st.text_input(
+        "Email Purpose",
+        placeholder="e.g. Follow up on a project proposal"
+    )
 
+    tone = st.selectbox(
+        "Choose Email Tone",
+        ["Professional", "Friendly", "Formal", "Concise"]
+    )
 
-def generate_email(recipient, purpose, tone, details):
+    details = st.text_area(
+        "Additional Details",
+        placeholder="Enter important points to include...",
+        height=140
+    )
+
+    submitted = st.form_submit_button("✨ Generate Email")
+
+if submitted:
     if not recipient.strip() or not purpose.strip():
-        return "Please enter the recipient and email purpose."
+        st.warning("Please enter the recipient and email purpose.")
 
-    prompt = f"""
-    Write an email with the following details:
+    else:
+        try:
+            # Read API key from Streamlit Secrets
+            api_key = st.secrets["GROQ_API_KEY"]
+            client = Groq(api_key=api_key)
 
-    Recipient: {recipient}
-    Purpose: {purpose}
-    Tone: {tone}
-    Additional details: {details}
+            with st.spinner("Generating your email..."):
+                response = client.chat.completions.create(
+                    model="openai/gpt-oss-20b",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a professional email-writing "
+                                "assistant. Write clear, natural emails. "
+                                "Include a subject line and email body. "
+                                "Do not invent facts."
+                            )
+                        },
+                        {
+                            "role": "user",
+                            "content": f"""
+Recipient: {recipient}
+Purpose: {purpose}
+Tone: {tone}
+Additional details: {details}
 
-    Include a subject line and email body.
-    Keep it clear and relevant.
-    Do not invent facts.
-    """
+Generate a suitable email with a subject line and body.
+"""
+                        }
+                    ],
+                    temperature=0.7,
+                    max_tokens=700
+                )
 
-    try:
-        response = client.chat.completions.create(
-            model="openai/gpt-oss-20b",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a professional email writer."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            temperature=0.7
-        )
-        return response.choices[0].message.content
+            email = response.choices[0].message.content
 
-    except Exception as e:
-        return f"Error generating email: {e}"
+            st.success("Your email is ready!")
+            st.subheader("📩 Generated Email")
 
+            st.text_area(
+                "Review and copy your email",
+                value=email,
+                height=280
+            )
 
-with gr.Blocks(title="AI Email Generator") as app:
-    gr.Markdown("# AI Email Generator")
-    gr.Markdown("Generate emails with the help of AI.")
+            st.download_button(
+                label="⬇️ Download Email",
+                data=email,
+                file_name="generated_email.txt",
+                mime="text/plain"
+            )
 
-    recipient = gr.Textbox(label="Recipient")
-    purpose = gr.Textbox(label="Email Purpose")
+        except KeyError:
+            st.error(
+                "GROQ_API_KEY is missing. Add it in "
+                "Streamlit Cloud → App settings → Secrets."
+            )
 
-    tone = gr.Dropdown(
-        choices=["Professional", "Friendly", "Formal", "Concise"],
-        value="Professional",
-        label="Email Tone"
-    )
+        except Exception as e:
+            st.error(
+                "Email generation failed. Check your API key, "
+                "Groq model availability, and API usage limits."
+            )
+            st.caption(str(e))
 
-    details = gr.Textbox(
-        label="Additional Details",
-        lines=4
-    )
-
-    generate = gr.Button("Generate Email")
-    output = gr.Textbox(label="Generated Email", lines=12)
-
-    generate.click(
-        fn=generate_email,
-        inputs=[recipient, purpose, tone, details],
-        outputs=output
-    )
-
-
-if __name__ == "__main__":
-    app.launch()
+st.divider()
+st.caption("AI Email Generator | Powered by Streamlit and Groq")
